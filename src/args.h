@@ -14,7 +14,6 @@
  */
 
 
-
 #ifndef ARGS_H
 #define ARGS_H
 
@@ -32,7 +31,7 @@ struct options
     char file_name[FILE_NAME_SIZE];
 };
 
-/* Exports options as a global type */
+/* Export as a global type */
 typedef struct options options_t;
 
 /* Public functions section */
