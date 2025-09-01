@@ -20,49 +20,74 @@
 
 #include "datasets.h"
 
-void print_imageset_info(imageset_t imageset) {
-    printf("==============================\n");
-    printf("Image Dataset:\n");
-    printf("  Dataset Length: %i\n", imageset.length);
-    printf("  Image Size: %i by %i\n",
-        imageset.image_height, imageset.image_width);
-    printf("==============================\n");
-}
-
-void print_imageset_head_image(imageset_t imageset) {
-    image_t head_image = imageset.images[0];
-    print_image(head_image);
-}
-
+/**
+ * Parses integers from a CSV row
+ *
+ * @param csv_row_buffer Pointer to the buffer containing CSV data
+ * @param img_size Number of integers to parse from the CSV row
+ * @return Pointer to an array of parsed integers (must be freed by caller)
+ */
 int* parse_ints_from_csvrow(char* csv_row_buffer, int img_size)
 {
     int buff_itr = 0;
     int* parsed_array = (int *)malloc(img_size * sizeof(int));
     for (int i = 0; i < img_size; i++) {
-        char temp_buff[10];
         int temp_itr = 0;
-
+        char temp_buff[32];
         memset(temp_buff, 0, sizeof(temp_buff));
-        while (csv_row_buffer[buff_itr] != ',') {
-            temp_buff[temp_itr++] = csv_row_buffer[buff_itr++];
+        while (csv_row_buffer[buff_itr] != ',' && 
+            csv_row_buffer[buff_itr] != '\0' &&
+            csv_row_buffer[buff_itr] != '\n' && 
+            csv_row_buffer[buff_itr] != '\r' &&
+            temp_itr < (int)(sizeof(temp_buff) - 1)) {  // Leave space for null terminator
+                temp_buff[temp_itr++] = csv_row_buffer[buff_itr++];
         }
 
         parsed_array[i] = atoi(temp_buff);
+        if (csv_row_buffer[buff_itr] == '\0' || csv_row_buffer[buff_itr] == '\n' || csv_row_buffer[buff_itr] == '\r') {
+            break;
+        }
+
         buff_itr++;
     }
 
     return parsed_array;
 }
 
-/* Take in a char buffer of arbitrary size and parse into an image type */
+/**
+ * Frees all memory allocated for a linked list of images
+ *
+ * @param head Pointer to the head of the linked list
+ * @return Nothing
+ */
+void free_image_linked_list(image_list_t* head) {
+    image_list_t* cur = head;
+    while (cur) {
+        image_list_t* next = cur->next;
+        if (cur->image.image_data) {
+            free(cur->image.image_data);
+        }
+        free(cur);
+        cur = next;
+    }
+}
+
+/**
+ * Parses an image row from a CSV buffer
+ *
+ * @param buffer Pointer to the buffer containing CSV data
+ * @param img_height Height of the image in pixels
+ * @param img_width Width of the image in pixels
+ * @return An image_t structure containing the parsed image data
+ */
 image_t parse_img_row(char *buffer, int img_height, int img_width) {
     image_t image;
     image.image_height = img_height;
     image.image_width = img_width;
-
     int img_size = (img_height * img_width) + 1;
     int* parsed_int_array = parse_ints_from_csvrow(buffer, img_size);
     image.image_data = (int *)malloc(img_height * img_width * sizeof(int));
+
     for (int i = 0; i < img_size; i++) {
         if (i == 0) {
             image.label = parsed_int_array[i];
@@ -72,138 +97,199 @@ image_t parse_img_row(char *buffer, int img_height, int img_width) {
         }
     }
 
+    free(parsed_int_array);
     return image;
 }
 
-imageset_t read_imageset_csv(char* file_path, int img_height, int img_width) {
+/**
+ * Builds a linked list of images from a CSV file
+ *
+ * @param fp File pointer to an opened CSV file
+ * @param img_height Height of each image in pixels
+ * @param img_width Width of each image in pixels
+ * @param out_count Pointer to store the number of images read
+ * @return Pointer to the head of the created linked list
+ */
+image_list_t* build_image_dynamic_list(FILE* fp, int img_height, int img_width, int* out_count) {
+    image_list_t* head = NULL;
+    image_list_t* recent = NULL;
     int row_idx = 0;
-    int total_images = 0;  // Initialize to 0
-    imageset_t output_imageset;
+    int count = 0;
 
-    FILE *file_pointer = fopen(file_path, "r");
-    if (file_pointer == NULL) {
-        perror("Error opening file");
-        // Return an empty imageset on error
-        output_imageset.length = 0;
-        output_imageset.images = NULL;
-        return output_imageset;
+    const int buffer_size = 8192;
+    char* buffer = (char*)malloc(buffer_size);
+    while (fgets(buffer, buffer_size, fp) != NULL) {
+        if (row_idx++ == 0) continue; // skip the csv header
+
+        image_list_t* node = (image_list_t*)malloc(sizeof(image_list_t));
+        node->image = parse_img_row(buffer, img_height, img_width);
+        node->next = NULL;
+
+        if (!head) {
+            head = recent = node;
+        } else {
+            recent->next = node;
+            recent = node;
+        }
+
+        count++;
     }
 
-    int buffer_size = (8192); // arbitrary size
-    char *buffer = (char *)malloc(buffer_size * sizeof(char));
-
-    // Init the head node of our linked list
-    int is_initalized = 0;
-    image_list_t *head_node = NULL;
-    image_list_t *recent_node = NULL;
-
-    output_imageset.image_height = img_height;
-    output_imageset.image_width = img_width;
-
-    while (fgets(buffer, buffer_size, file_pointer) != NULL) {
-        if (row_idx == 0) { // We skip the first row of the CSV due to labels
-            row_idx++;
-            continue;
-        }
-
-        image_list_t *current_node = (image_list_t *)malloc(sizeof(image_list_t));
-        if (current_node == NULL) {
-            perror("Memory allocation failed");
-            break;
-        }
-
-        current_node->image = parse_img_row(buffer, img_height, img_width);
-        current_node->next = NULL;
-
-        if (is_initalized == 0) {
-            head_node = current_node;
-            recent_node = head_node;
-            is_initalized = 1;
-        }
-        else {
-            recent_node->next = current_node;
-            recent_node = current_node;
-        }
-
-        total_images++;
-        row_idx++;
-    }
-
-    fclose(file_pointer);
-
-    output_imageset.length = total_images;
-
-    output_imageset.images = (image_t *)malloc(total_images * sizeof(image_t));
-    if (output_imageset.images == NULL && total_images > 0) {
-        perror("Memory allocation failed");
-        image_list_t *current = head_node;
-        while (current != NULL) {
-            image_list_t *temp = current;
-            current = current->next;
-            free(temp);
-        }
-        free(buffer);
-        output_imageset.length = 0;
-        return output_imageset;
-    }
-
-    image_list_t *current_node = head_node;
-    image_list_t *last_node = NULL;
-    for (int i = 0; i < total_images; i++) {
-        if (current_node == NULL) break;  // Safety check
-        output_imageset.images[i] = current_node->image;
-        last_node = current_node;
-        current_node = current_node->next;
-        free(last_node);
-    }
-
+    *out_count = count;
     free(buffer);
-    return output_imageset;
+    return head;
 }
 
-/* Take in an image and print a visualization to the console */
+/**
+ * Converts a linked list of images to an array in an imageset structure
+ *
+ * @param head Pointer to the head of the linked list
+ * @param count Number of images in the linked list
+ * @return A pointer to the array of parsed images
+ */
+image_t* list_to_imageset(image_list_t* head, int count) {
+    image_list_t* cur = head;
+    image_t* image_array = (image_t*)malloc(count * sizeof(image_t));
+
+    for (int i = 0; i < count && cur; i++) {
+        image_array[i] = cur->image;
+        image_list_t* prev = cur;
+        cur = cur->next;
+        free(prev);
+    }
+
+    return image_array;
+}
+
+/**
+ * Reads an image dataset from a CSV file
+ * 
+ * @param file_path Path to the CSV file containing image data
+ * @param img_height Height of each image in pixels
+ * @param img_width Width of each image in pixels
+ * @return An imageset_t structure containing the parsed imageset
+ */
+imageset_t read_imageset_csv(char* file_path, int img_height, int img_width) {
+    int count = 0;
+    imageset_t imageset;
+    FILE* fp = fopen(file_path, "r");
+
+    imageset.image_height = img_height;
+    imageset.image_width = img_width;
+    imageset.length = 0;
+    imageset.images = NULL;
+
+    if (fp == NULL) {
+        return imageset;
+    }
+
+    image_list_t* head = build_image_dynamic_list(fp, img_height, img_width, &count);
+    imageset.images = list_to_imageset(head, count);
+    imageset.length = count;
+
+    fclose(fp);
+    return imageset;
+}
+
+/**
+ * Converts an image to a 1Dtensor
+ *
+ * @param image The image to convert to a tensor
+ * @return Pointer to a newly allocated 1D tensor array (freed by caller)
+ */
+int* get_image_1d_tensor(image_t image) {
+    if (image.image_data == NULL) {
+        return NULL;
+    }
+
+    int img_size = image.image_height * image.image_width;
+    int* tensor = (int *)malloc(img_size * sizeof(int));
+    memcpy(tensor, image.image_data, img_size * sizeof(int));
+
+    return tensor;
+}
+
+/**
+ * Prints a visual representation of an image to the console
+ *
+ * @param image The image to be displayed
+ */
 void print_image(image_t image) {
-    printf("\nImage label = %i\n", image.label);
-    printf("Image Contents:\n");
+    printf("┌─────────────────────────────────┐\n");
+    printf("│          IMAGE CONTENT          │\n");
+    printf("├─────────────────────────────────┤\n");
+    printf("│  Label: %-23d  │\n", image.label);
+    printf("└─────────────────────────────────┘\n");
+
+    if (image.image_data == NULL) {
+        printf("Error: Image data is NULL\n");
+        return;
+    }
+
     for (int i = 0; i < image.image_height; i++) {
         for (int j = 0; j < image.image_width; j++) {
-            int img_val = image.image_data[(i * image.image_height) + j];
+            int img_val = image.image_data[(i * image.image_width) + j];
             if (img_val < 64) {
-                printf("\xE2\x96\x91\xE2\x96\x91"); // light square unicode
+                printf("\xE2\x96\x91\xE2\x96\x91"); // light-shade
             }
-            else if ((128 > img_val) && (img_val >= 64)) {
-                printf("\xE2\x96\x92\xE2\x96\x92"); // medium square unicode
+            else if (img_val < 128) {
+                printf("\xE2\x96\x92\xE2\x96\x92"); // medium-shade
             }
-            else if ((192 > img_val) && (img_val >= 128)) {
-                printf("\xE2\x96\x93\xE2\x96\x93"); // dark square unicode
+            else if (img_val < 192) {
+                printf("\xE2\x96\x93\xE2\x96\x93"); // dark-shade
             }
             else {
-                printf("\xE2\x96\x88\xE2\x96\x88"); // filled square unicode
+                printf("\xE2\x96\x88\xE2\x96\x88"); // solid-shade
             }
         }
-
         printf("\n");
     }
 }
 
+/**
+ * Prints the properties and visual representation of an image
+ *
+ * @param image The image whose properties are to be displayed
+ */
 void print_image_properties(image_t image) {
-    printf("==============================\n");
-    printf("Image:\n");
-    printf("  Image Size: %i by %i\n",
-        image.image_height, image.image_width);
-    printf("  Image Label: %i\n", image.label);
+    printf("┌─────────────────────────────────┐\n");
+    printf("│         IMAGE PROPERTIES        │\n");
+    printf("├─────────────────────────────────┤\n");
+    printf("│  Dimensions: %3d x %-10d  │\n", 
+           image.image_height, image.image_width);
+    printf("│  Label:      %-15d  │\n", image.label);
+    printf("└─────────────────────────────────┘\n");
+
     print_image(image);
-    printf("\n");
-    printf("==============================\n");
 }
 
-int* get_image_1d_tensor(image_t image) {
-    int* tensor = (int *)malloc(image.image_height * image.image_width * sizeof(int));
-    for (int i = 0; i < image.image_height; i++) {
-        for (int j = 0; j < image.image_width; j++) {
-            tensor[(i * image.image_width) + j] = image.image_data[(i * image.image_width) + j];
-        }
-    }
+/**
+ * Prints information about an image dataset
+ *
+ * @param imageset The image dataset to display information about
+ * @return Nothing
+ */
+void print_imageset_info(imageset_t imageset) {
+    printf("┌─────────────────────────────────┐\n");
+    printf("│          IMAGE DATASET          │\n");
+    printf("├─────────────────────────────────┤\n");
+    printf("│  Total Images: %-15d  │\n", imageset.length);
+    printf("│  Dimensions:  %3d x %-10d  │\n", 
+           imageset.image_height, imageset.image_width);
+    printf("└─────────────────────────────────┘\n");
+}
 
-    return tensor;
+/**
+ * Prints the first image in the dataset
+ *
+ * @param imageset The image dataset containing the image to display
+ * @return Nothing
+ */
+void print_imageset_head_image(imageset_t imageset) {
+    if (imageset.length == 0 || imageset.images == NULL) {
+        printf("Error: Empty image dataset\n");
+        return;
+    }
+    image_t head_image = imageset.images[0];
+    print_image(head_image);
 }
