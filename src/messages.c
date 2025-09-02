@@ -13,13 +13,11 @@
  * ============================================================================
  */
 
-
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "colors.h"
 #include "messages.h"
-
 
 // Help message
 void help()
@@ -44,20 +42,18 @@ void description()
 {
     fprintf(stdout, BROWN "Description: " NO_COLOR);
     fprintf(stdout, "Write here what you want to be your project description."
-            "Observe that you can break a string inside a fprintf\n");
+                    "Observe that you can break a string inside a fprintf\n");
 }
 
 // Options message
 void options()
 {
     fprintf(stdout, BROWN "Options:\n\n" NO_COLOR);
-    fprintf(stdout, GRAY "\t-v|--version\n" NO_COLOR
-                    "\t\tPrints %s version\n\n", __PROGRAM_NAME__);
+    fprintf(stdout, GRAY "\t-v|--version\n" NO_COLOR "\t\tPrints %s version\n\n", __PROGRAM_NAME__);
     fprintf(stdout, GRAY "\t-h|--help\n" NO_COLOR
-                    "\t\tPrints this help message\n\n");
+                         "\t\tPrints this help message\n\n");
     fprintf(stdout, GRAY "\t--no-color\n" NO_COLOR
-                    "\t\tDoes not use colors for printing\n\n");
-
+                         "\t\tDoes not use colors for printing\n\n");
 }
 
 // Author message

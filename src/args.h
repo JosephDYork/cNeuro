@@ -13,7 +13,6 @@
  * ============================================================================
  */
 
-
 #ifndef ARGS_H
 #define ARGS_H
 
@@ -35,7 +34,6 @@ struct options
 typedef struct options options_t;
 
 /* Public functions section */
-void options_parser(int argc, char* argv[], options_t* options);
-
+void options_parser(int argc, char *argv[], options_t *options);
 
 #endif // ARGS_H
